@@ -65,8 +65,9 @@ contract ERC20 {
 contract POWToken is ERC20 {
     address public _minter;
 
-    mapping(address => uint256) internal _lastSolution;
-    mapping(address => bytes32) internal _currentWork;
+    uint256 internal _lastSolutionTime;
+    uint256 internal _currentDifficulty;
+    bytes32 internal _currentWork;
     event Minted(address indexed _to, uint256 _value);
     event Burned(address indexed _from, uint256 _value);
     event SwitchedMinter(address indexed _old, address indexed _new);
@@ -78,6 +79,9 @@ contract POWToken is ERC20 {
         _totalSupply = 100000000 * (10 ** _decimals); // 100 million * (10^18 decimals)
         _balances[msg.sender] = _totalSupply;
         _minter = msg.sender;  // Make the contract address the minter
+        _currentDifficulty = uint256(0x0ffffffff0000000000000000000000000000000000000000000000000000000);
+        _currentWork = blockhash(block.number);
+        _lastSolutionTime = block.timestamp;
         emit Transfer(address(0), msg.sender, _totalSupply);
     }
 
@@ -107,37 +111,37 @@ contract POWToken is ERC20 {
     }
     
     function GetDifficulty() public view returns (uint256) {
-        if(_lastSolution[msg.sender] == 0) {
-            return 7236998675585915423409399128287131963803921590493563082079543837970346803200; // 0x0fffff0000000000000000000000000000000000000000000000000000000000
-        }
-        uint256 diffTime = block.timestamp - _lastSolution[msg.sender];
-        if (diffTime > 86400) {
-            diffTime = 86400;
-        }
-        
-        // !!! Very stupid difficulty retargetting (this is linear, difficulty targets should be logaritmic, this is extremely dangerous! for testing only.
-        return (diffTime * 83761558745207354437608786207026990321804648038119943079624349976508643); 
-        
+        return _currentDifficulty;
     }
     
-    function GetWork() public returns (bytes32) {
-        // Set an current work for the miner
-        _currentWork[msg.sender] = blockhash(block.number);
-        return _currentWork[msg.sender];
+    function GetWork() public view returns (bytes32) {
+        return _currentWork;
+    }
+    
+    function SetDifficulty() public returns (bool) {
+        uint256 diffTime = block.timestamp - _lastSolutionTime;
+        
+		// Very basic difficulty retargetting
+        if (diffTime > 60) {
+            _currentDifficulty = (_currentDifficulty / 10) * 9;
+        } else {
+            _currentDifficulty = (_currentDifficulty / 10) * 11;
+        }
+        return true;    
     }
 
     function submitWork(uint128 nNonce) public returns (bool) {
         // Worker hash should include the block hash which he setted the work, his own address (each miner work is unique) and their nNonce.
+        // Avoid multiple submitions of the same work
+        require (_currentWork != blockhash(block.number), "Validating work at the same block is forbidden");
         bytes memory solution = abi.encodePacked(GetWork(), msg.sender, nNonce);
 
         bytes32 powHash = keccak256(abi.encodePacked(solution));
         uint256 result = uint256(powHash);
         assert(result < GetDifficulty()); // Check if work meets
-        
-        _lastSolution[msg.sender] = block.timestamp;
-        // Set an new worker to the miner to avoid multiple submits from the same worker
-        // TODO: Don't let the miner submit two works in the same block, to avoid an exploit which allows the miner to submit multiple works.
-        _currentWork[msg.sender] = blockhash(block.number);
+        SetDifficulty();
+        _lastSolutionTime = block.timestamp;
+        _currentWork = blockhash(block.number);
         mint(msg.sender, 1 * (10 ** _decimals));
         return true;
     }
