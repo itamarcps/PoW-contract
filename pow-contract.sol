@@ -64,12 +64,11 @@ contract ERC20 {
 // Contract for the token
 contract POWToken is ERC20 {
 
+    mapping(address => uint256) internal _currentWork;
     uint256 internal _lastSolutionTime;
     uint256 internal _currentDifficulty;
-    bytes32 internal _currentWork;
     event Minted(address indexed _to, uint256 _value);
     event Burned(address indexed _from, uint256 _value);
-    event SwitchedMinter(address indexed _old, address indexed _new);
 
     constructor() {
         _name = "Test contract";
@@ -78,7 +77,6 @@ contract POWToken is ERC20 {
         _totalSupply = 1 * (10 ** _decimals); // 100 million * (10^18 decimals)
         _balances[msg.sender] = _totalSupply;
         _currentDifficulty = uint256(0x00000ffff0000000000000000000000000000000000000000000000000000000);
-        _currentWork = blockhash(block.number - 1);
         _lastSolutionTime = block.timestamp;
         emit Transfer(address(0), msg.sender, _totalSupply);
     }
@@ -100,33 +98,32 @@ contract POWToken is ERC20 {
         return _currentDifficulty;
     }
     
-    function GetWork() public view returns (bytes32) {
-        return _currentWork;
+    function GetWork(address worker) public view returns (uint256) {
+        return _currentWork[worker];
     }
     
     function SetDifficulty() public returns (bool) {
         uint256 diffTime = block.timestamp - _lastSolutionTime;
-        
         if (diffTime > 60) {
-            _currentDifficulty = (_currentDifficulty / 10) * 8;
-        } else {
             _currentDifficulty = (_currentDifficulty / 10) * 12;
+        } else {
+            _currentDifficulty = (_currentDifficulty / 10) * 8;
         }
         return true;    
     }
 
-    function submitWork(uint128 nNonce) public returns (bool) {
-        // Worker hash should include the block hash which he setted the work, his own address (each miner work is unique) and their nNonce.
-        // Avoid multiple submitions of the same work
-        require (_currentWork != blockhash(block.number - 1), "Validating work at the same block is forbidden");
-        bytes memory solution = abi.encodePacked(GetWork(), msg.sender, nNonce);
+    function submitWork(uint256 nNonce) public returns (bool) {
+        // Each address have their own specific job to hash
+        // This avoids multiple submitions from different sources
+        bytes memory solution = abi.encodePacked(GetWork(msg.sender), msg.sender, nNonce);
 
         bytes32 powHash = keccak256(abi.encodePacked(solution));
         uint256 result = uint256(powHash);
         assert(result < GetDifficulty()); // Check if work meets
+        
         SetDifficulty();
         _lastSolutionTime = block.timestamp;
-        _currentWork = blockhash(block.number - 1);
+        _currentWork[msg.sender] = (GetWork(msg.sender) + 1);
         mint(msg.sender, 1 * (10 ** _decimals));
         return true; 
     }
