@@ -63,7 +63,6 @@ contract ERC20 {
 
 // Contract for the token
 contract POWToken is ERC20 {
-    address public _minter;
 
     uint256 internal _lastSolutionTime;
     uint256 internal _currentDifficulty;
@@ -76,30 +75,17 @@ contract POWToken is ERC20 {
         _name = "Test contract";
         _symbol = "TEST";
         _decimals = 18; // Default is 18, highly recommended
-        _totalSupply = 100000000 * (10 ** _decimals); // 100 million * (10^18 decimals)
+        _totalSupply = 1 * (10 ** _decimals); // 100 million * (10^18 decimals)
         _balances[msg.sender] = _totalSupply;
-        _minter = msg.sender;  // Make the contract address the minter
-        _currentDifficulty = uint256(0x0ffffffff0000000000000000000000000000000000000000000000000000000);
-        _currentWork = blockhash(block.number);
+        _currentDifficulty = uint256(0x00000ffff0000000000000000000000000000000000000000000000000000000);
+        _currentWork = blockhash(block.number - 1);
         _lastSolutionTime = block.timestamp;
         emit Transfer(address(0), msg.sender, _totalSupply);
     }
 
     // Minting
-    modifier minterOnly() {
-      require(msg.sender == _minter, "Account doesn't have minting privileges");
-      _;
-    }
 
-    function switchMinter(address _newMinter) public minterOnly returns (bool) {
-        require(_newMinter != address(0), "Transferring ownership to zero account is forbidden");
-
-        _minter = _newMinter;
-        emit SwitchedMinter(msg.sender, _minter);
-        return true;
-    }
-
-    function mint(address _to, uint256 _amount) public minterOnly returns (bool) {
+    function mint(address _to, uint256 _amount) private returns (bool) {
         require(_to != address(0), "Minting to zero account is forbidden");
         require(_amount > 0, "Minting requires a non-zero amount");
         
@@ -121,11 +107,10 @@ contract POWToken is ERC20 {
     function SetDifficulty() public returns (bool) {
         uint256 diffTime = block.timestamp - _lastSolutionTime;
         
-		// Very basic difficulty retargetting
         if (diffTime > 60) {
-            _currentDifficulty = (_currentDifficulty / 10) * 9;
+            _currentDifficulty = (_currentDifficulty / 10) * 8;
         } else {
-            _currentDifficulty = (_currentDifficulty / 10) * 11;
+            _currentDifficulty = (_currentDifficulty / 10) * 12;
         }
         return true;    
     }
@@ -133,7 +118,7 @@ contract POWToken is ERC20 {
     function submitWork(uint128 nNonce) public returns (bool) {
         // Worker hash should include the block hash which he setted the work, his own address (each miner work is unique) and their nNonce.
         // Avoid multiple submitions of the same work
-        require (_currentWork != blockhash(block.number), "Validating work at the same block is forbidden");
+        require (_currentWork != blockhash(block.number - 1), "Validating work at the same block is forbidden");
         bytes memory solution = abi.encodePacked(GetWork(), msg.sender, nNonce);
 
         bytes32 powHash = keccak256(abi.encodePacked(solution));
@@ -141,9 +126,9 @@ contract POWToken is ERC20 {
         assert(result < GetDifficulty()); // Check if work meets
         SetDifficulty();
         _lastSolutionTime = block.timestamp;
-        _currentWork = blockhash(block.number);
+        _currentWork = blockhash(block.number - 1);
         mint(msg.sender, 1 * (10 ** _decimals));
-        return true;
+        return true; 
     }
 }
 
